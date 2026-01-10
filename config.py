@@ -60,14 +60,14 @@ opt_arg.add_argument('--scheduler_interval', type=int, default=1)
 # Dataset and dataloader configurations
 data_arg = add_argument_group('Data')
 if dataset == '3DMatch':
-    data_arg.add_argument('--root', type=str, default='/data/Threedmatch_dataset')
+    data_arg.add_argument('--root', type=str, default='data/3DMatch')
     data_arg.add_argument('--descriptor', type=str, default='fcgf', choices=['fpfh', 'fcgf'])
     data_arg.add_argument('--inlier_threshold', type=float, default=0.10)
     data_arg.add_argument('--downsample', type=float, default=0.03)
     data_arg.add_argument('--re_thre', type=float, default=15, help='rotation error thrshold (deg)')
     data_arg.add_argument('--te_thre', type=float, default=30, help='translation error thrshold (cm)')
 else:
-    data_arg.add_argument('--root', type=str, default='/data/KITTI')
+    data_arg.add_argument('--root', type=str, default='data/KITTI')
     data_arg.add_argument('--descriptor', type=str, default='fcgf', choices=['fcgf', 'fpfh'])
     data_arg.add_argument('--inlier_threshold', type=float, default=1.2)
     data_arg.add_argument('--downsample', type=float, default=0.30)

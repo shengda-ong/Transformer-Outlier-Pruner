@@ -40,7 +40,7 @@ class TransformerPruner(nn.Module):
         [output]: (B,N)
         '''
         B, N, _ = corr_pos.shape
-        x = self.embeddings(corr_pos.view(-1,6)) #(B*N,6)
+        x = self.embedding(corr_pos.view(-1,6)) #(B*N,6)
         x = x.view(B,N,-1) # (B,N,128)
         x= self.transformer_encoder(x) #(B,N,128)
 
