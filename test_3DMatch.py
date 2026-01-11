@@ -76,13 +76,20 @@ def eval_3DMatch_scene(model, scene, scene_ind, dloader, config, args):
 
             model_time = model_timer.toc()
 
-            if sampled_trans.dim() == 3:
-                gt_trans_rep = gt_trans.repeat(sampled_trans.shape[0], 1, 1)
-                sampled_re, sampled_te = transformation_error(sampled_trans, gt_trans_rep)
-                succ = (sampled_re < config.re_thre) & (sampled_te < config.te_thre)
-                recall = succ.sum().item()
-                correct_num += recall
-                correct_ratio += recall / max(sampled_trans.shape[0], 1) * 100.0
+            if sampled_trans.dim() == 3 and sampled_trans.shape[0] > 0:
+                src_expanded = src_keypts.repeat(sampled_trans.shape[0], 1, 1)
+                R_hyp = sampled_trans[:, :3, :3]
+                t_hyp = sampled_trans[:, :3, 3].unsqueeze(1)
+
+                src_transformed = torch.matmul(src_expanded, R_hyp.transpose(1, 2)) + t_hyp
+                tgt_expanded = tgt_keypts.repeat(sampled_trans.shape[0], 1, 1)
+                dists = torch.norm(src_transformed - tgt_expanded, dim=-1)
+                inlier_counts = (dists < config.inlier_threshold).sum(dim=1)
+
+                best_idx = torch.argmax(inlier_counts)
+                best_trans = sampled_trans[best_idx].unsqueeze(0)
+
+                pred_trans = best_trans
             
             # Optional: RANSAC Refinement
             if args.solver == 'RANSAC':
