@@ -40,7 +40,7 @@ model_arg = add_argument_group('Model')
 model_arg.add_argument('--in_dim', type=int, default=6, help="Input dimension (6 for x1,y1,z1,x2,y2,z2)")
 model_arg.add_argument('--d_model', type=int, default=128, help="Transformer embedding dimension")
 model_arg.add_argument('--nhead', type=int, default=4, help="Number of attention heads")
-model_arg.add_argument('--num_layers', type=int, default=6, help="Number of transformer encoder layers")
+model_arg.add_argument('--num_layers', type=int, default=10, help="Number of transformer encoder layers") # 10 layers for deeper model
 model_arg.add_argument('--dim_feedforward', type=int, default=512, help="Feedforward network dimension")
 model_arg.add_argument('--dropout', type=float, default=0.1)
 
