@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from models.common import rigid_transform_3d, knn
+from einops import rearrange
 
 # vanila transformer pruner
 class TransformerPruner(nn.Module):
@@ -103,6 +104,81 @@ class SOGMixingLayer(nn.TransformerEncoderLayer):
                               key_padding_mask=key_padding_mask,
                               need_weights=False,
                               is_causal=is_causal)[0]
+    
+ 
+class CAAttention(nn.Module):
+    def __init__(self, channels, heads=4):
+        super(CAAttention, self).__init__()
+        self.heads = heads
+        # Learnable temperature parameter for channel attention
+        self.temperature = nn.Parameter(torch.ones(heads, 1, 1))
+
+        # 1x1 Convolutions act as point-wise linear layers across channels
+        self.query_filter = nn.Conv2d(channels, channels, kernel_size=(1, 1))
+        self.key_filter = nn.Conv2d(channels, channels, kernel_size=(1, 1))
+        self.value_filter = nn.Conv2d(channels, channels, kernel_size=(1, 1))
+        self.project_out = nn.Conv2d(channels, channels, kernel_size=(1, 1))
+
+    def forward(self, x):
+        # Input x: (B, N, C) -> Reshape to (B, C, N, 1) for Conv2d
+        x1 = x.transpose(1, 2).unsqueeze(-1)
+        B, C, N, _ = x1.shape
+        q = self.query_filter(x1)
+        k = self.key_filter(x1)
+        v = self.value_filter(x1)
+
+        # Multi-head attention across channels
+        q = rearrange(q, 'b (head c) h w -> b head c (h w)', head=self.heads)
+        k = rearrange(k, 'b (head c) h w -> b head c (h w)', head=self.heads)
+        v = rearrange(v, 'b (head c) h w -> b head c (h w)', head=self.heads)
+
+        q = torch.nn.functional.normalize(q, dim=-1)
+        k = torch.nn.functional.normalize(k, dim=-1)
+
+        attn = (q @ k.transpose(-2, -1)) * self.temperature
+        attn = attn.softmax(dim=-1)
+        out = (attn @ v)
+
+        out = rearrange(out, 'b head c (h w) -> b (head c) h w', head=self.heads, h=N, w=1)
+        out = self.project_out(out)
+        
+        # Back to (B, N, C)
+        out = out.squeeze(-1).transpose(1, 2)
+        return out + x # Residual connection inside CA
+
+
+class SACAMixingLayer(SOGMixingLayer):
+    def __init__(self, d_model, nhead, dim_feedforward, dropout, batch_first, norm_first):
+        super().__init__(d_model, nhead, dim_feedforward, dropout,
+                         batch_first=batch_first, norm_first=norm_first)
+        # Initialize the Channel Attention block
+        self.channel_attn = CAAttention(channels=d_model, heads=nhead)
+
+    def forward(self, src, sog_matrix, src_mask=None, src_key_padding_mask=None, is_causal=False):
+        x = src
+        if self.norm_first:
+             # Part 1: Spatial Attention (with SOG Mixing)
+            x_norm = self.norm1(x)
+            src_mixed = torch.bmm(sog_matrix, x_norm)
+            attn_out = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
+            x = x + attn_out
+
+            # Part 2: Channel Attention and Feed-Forward
+            x_norm2 = self.norm2(x)
+            x_ca = self.channel_attn(x_norm2) # Enhance features with channel context
+            x = x + self._ff_block(x_ca)
+        else:
+            # Standard implementation for post-norm
+            src_mixed = torch.bmm(sog_matrix, x)
+            attn_out = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
+            x = self.norm1(x + attn_out)
+
+            x_ca = self.channel_attn(x)
+            x = self.norm2(x + self._ff_block(x_ca))
+        
+        return x
+            
+
 
 
 class TransformerGeoPruner(nn.Module):
@@ -181,6 +257,23 @@ class TransformerGeoPruner(nn.Module):
         return logits, features
 
 
+class TransformerGeoPrunerCA(TransformerGeoPruner):
+    def __init__(self, in_dim=6, d_model=128, nhead=4, num_layers=10, dropout=0.1, sigma_d=0.1):
+        super().__init__(in_dim, d_model, nhead, num_layers, dropout, sigma_d)
+
+        # Replace baseline layers with CA-enabled layers
+        # All parameters (d_model, nhead, dim_feedforward=d_model*2) remain identical
+
+        self.layers = nn.ModuleList([
+            SACAMixingLayer(d_model=d_model,
+                            nhead=nhead,
+                            dim_feedforward=d_model * 2,
+                            dropout=dropout,
+                            batch_first=True,
+                            norm_first=True)
+            for _ in range(num_layers)
+        ])
+
 class MethodName(nn.Module):
     def __init__(self, config):
         super(MethodName, self).__init__()
@@ -192,7 +285,7 @@ class MethodName(nn.Module):
         #     num_layers=config.num_layers,
         #     dropout=config.dropout
         # )
-        self.pruner = TransformerGeoPruner(
+        self.pruner = TransformerGeoPrunerCA(
             in_dim=config.in_dim,
             d_model=config.d_model,
             nhead=config.nhead,
