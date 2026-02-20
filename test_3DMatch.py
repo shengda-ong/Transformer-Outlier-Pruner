@@ -90,7 +90,14 @@ def eval_3DMatch_scene(model, scene, scene_ind, dloader, config, args):
                 best_trans = sampled_trans[best_idx].unsqueeze(0)
 
                 pred_trans = best_trans
-            
+                
+                # Update pred_labels based on best hypothesis for consistency
+                warped_src = transform(src_keypts, pred_trans)
+                final_dists = torch.norm(warped_src - tgt_keypts, dim=-1)
+                pred_labels = (final_dists < config.inlier_threshold).float()
+            else:
+                pred_labels = (logits > 0).float()
+
             # Optional: RANSAC Refinement
             if args.solver == 'RANSAC':
                 src_pcd = make_point_cloud(src_keypts[0].detach().cpu().numpy())

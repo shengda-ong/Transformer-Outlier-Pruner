@@ -29,9 +29,11 @@ snapshot_arg.add_argument('--save_dir', type=str, default=os.path.join(f'snapsho
 # Loss configurations
 loss_arg = add_argument_group('Loss')
 loss_arg.add_argument('--evaluate_interval', type=int, default=1)
-loss_arg.add_argument('--balanced', type=str2bool, default=False)
+loss_arg.add_argument('--balanced', type=str2bool, default=True)
 loss_arg.add_argument('--weight_classification', type=float, default=1.0)
 loss_arg.add_argument('--weight_spectralmatching', type=float, default=1.0)
+loss_arg.add_argument('--weight_edgefeature', type=float, default=1.0)
+loss_arg.add_argument('--weight_topk', type=float, default=1.0)
 loss_arg.add_argument('--weight_transformation', type=float, default=0.0)
 loss_arg.add_argument('--transformation_loss_start_epoch', type=int, default=0)
 

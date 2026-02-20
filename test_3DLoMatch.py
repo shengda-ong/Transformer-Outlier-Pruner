@@ -86,15 +86,26 @@ def eval_3DMatch_scene(model, scene_ind, dloader, config, args):
                 best_trans = sampled_trans[best_idx].unsqueeze(0)
 
                 pred_trans = best_trans
+                
+                # Update pred_labels based on the best hypothesis for consistency
+                warped_src = transform(src_keypts, pred_trans)
+                final_dists = torch.norm(warped_src - tgt_keypts, dim=-1)
+                pred_labels = (final_dists < config.inlier_threshold).float()
 
             if args.use_icp:
                 pred_trans = icp_refine(src_keypts, tgt_keypts, src_normal, tgt_normal, pred_trans, config.inlier_threshold)
 
-            class_stats = class_loss(logits, gt_labels)
-            recall, Re, Te, rmse = evaluate_metric(pred_trans, gt_trans, src_keypts, tgt_keypts, pred_labels)
+            class_stats = class_loss(pred_labels, gt_labels)
+            recall_val, Re, Te, rmse = evaluate_metric(pred_trans, gt_trans, src_keypts, tgt_keypts, pred_labels)
+
+            # Update summary metrics
+            seed_precision += gt_labels[0, res['seeds'][0]].sum().item() / res['seeds'].size(1) * 100.0
+            seed_num += gt_labels[0, res['seeds'][0]].sum().item()
+            if recall_val > 0:
+                correct_num += 1
 
             # Save statistics
-            stats[i, 0] = float(recall / 100.0)
+            stats[i, 0] = float(recall_val / 100.0)
             stats[i, 1] = float(Re)
             stats[i, 2] = float(Te)
             stats[i, 3] = int(torch.sum(gt_labels))

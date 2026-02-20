@@ -65,45 +65,28 @@ class SOGMixingLayer(nn.TransformerEncoderLayer):
                          batch_first=batch_first, norm_first=norm_first)
         
     def forward(self, src, sog_matrix, src_mask=None, src_key_padding_mask=None, is_causal=False):
-        # src shape: (B, N, D)
-        # sog_matrix shape: (B, N, N)
-        # (B, N, N) @ (B, N, D) -> (B, N, D)
-
         x = src
         if self.norm_first:
-            '''
-            1. Normalize first
-            2. Mix the normalized features (SOG @ X_norm)
-            3. Attention
-            4. Residual Connection
-            5. FF & Norm
-            '''          
             x_norm = self.norm1(x)
             src_mixed = torch.bmm(sog_matrix, x_norm)
-            attn_out = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
+            attn_out, attn_weights = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
             x = x + attn_out
             x = x + self._ff_block(self.norm2(x))
         else:
-
-            '''
-            1. Mix raw features (SOG @ X)
-            2. Attention
-            3. Residual Connection & Norm
-            4. FF & Norm
-            '''
             src_mixed = torch.bmm(sog_matrix, x)
-            attn_out = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
+            attn_out, attn_weights = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
             x = self.norm1(x + attn_out)
             x = self.norm2(x + self._ff_block(x))
         
-        return x
+        return x, attn_weights
 
     def _sa_block(self, x, attn_mask, key_padding_mask, is_causal):
-        return self.self_attn(x, x, x,
-                              attn_mask=attn_mask,
-                              key_padding_mask=key_padding_mask,
-                              need_weights=False,
-                              is_causal=is_causal)[0]
+        x, weights = self.self_attn(x, x, x,
+                                   attn_mask=attn_mask,
+                                   key_padding_mask=key_padding_mask,
+                                   need_weights=True,
+                                   is_causal=is_causal)
+        return x, weights
     
  
 class CAAttention(nn.Module):
@@ -160,7 +143,7 @@ class SACAMixingLayer(SOGMixingLayer):
              # Part 1: Spatial Attention (with SOG Mixing)
             x_norm = self.norm1(x)
             src_mixed = torch.bmm(sog_matrix, x_norm)
-            attn_out = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
+            attn_out, attn_weights = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
             x = x + attn_out
 
             # Part 2: Channel Attention and Feed-Forward
@@ -170,13 +153,13 @@ class SACAMixingLayer(SOGMixingLayer):
         else:
             # Standard implementation for post-norm
             src_mixed = torch.bmm(sog_matrix, x)
-            attn_out = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
+            attn_out, attn_weights = self._sa_block(src_mixed, src_mask, src_key_padding_mask, is_causal)
             x = self.norm1(x + attn_out)
 
             x_ca = self.channel_attn(x)
             x = self.norm2(x + self._ff_block(x_ca))
         
-        return x
+        return x, attn_weights
             
 
 
@@ -219,12 +202,6 @@ class TransformerGeoPruner(nn.Module):
         src_pts = corr_pos[:, :, :3]
         tgt_pts = corr_pos[:, :, 3:]
 
-        '''
-        1. Compute pairwise distance matrices for source and target points
-        2. Compute Compatibiltiy scores
-        3. W * (W X W)
-        4. Row-normalize
-        '''
         # distance matrices
         dist_s = torch.cdist(src_pts, src_pts)
         dist_t = torch.cdist(tgt_pts, tgt_pts)
@@ -247,14 +224,16 @@ class TransformerGeoPruner(nn.Module):
         x = self.embedding(corr_pos.view(-1, 6)).view(B, N, -1) #(B,N,128)
         sog_matrix = self.compute_sog_matrix(corr_pos)
 
+        all_attn_weights = []
         for layer in self.layers:
-            x = layer(x, sog_matrix) #(B,N,128)
+            x, attn_weights = layer(x, sog_matrix) #(B,N,128)
+            all_attn_weights.append(attn_weights)
         
         logits = self.classifier(x).squeeze(-1)
         features = self.feature_proj(x)
         features = F.normalize(features, p=2, dim=-1)
 
-        return logits, features
+        return logits, features, all_attn_weights
 
 
 class TransformerGeoPrunerCA(TransformerGeoPruner):
@@ -278,13 +257,6 @@ class MethodName(nn.Module):
     def __init__(self, config):
         super(MethodName, self).__init__()
         self.config = config
-        # self.pruner = TransformerPruner(
-        #     in_dim=config.in_dim,
-        #     d_model=config.d_model,
-        #     nhead=config.nhead,
-        #     num_layers=config.num_layers,
-        #     dropout=config.dropout
-        # )
         self.pruner = TransformerGeoPrunerCA(
             in_dim=config.in_dim,
             d_model=config.d_model,
@@ -306,7 +278,7 @@ class MethodName(nn.Module):
         src_pts = input_data['src_keypts']
         tgt_pts = input_data['tgt_keypts']
 
-        logits, features = self.pruner(corr)
+        logits, features, attn_weights = self.pruner(corr)
         confidence = torch.sigmoid(logits)
 
         pred_trans = rigid_transform_3d(src_pts, tgt_pts, weights=confidence)
@@ -314,7 +286,8 @@ class MethodName(nn.Module):
             'final_trans': pred_trans,
             'logits': logits,
             'confidence': confidence,
-            'features': features
+            'features': features,
+            'attn_weights': attn_weights
         }
 
         return res

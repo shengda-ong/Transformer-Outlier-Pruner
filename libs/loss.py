@@ -161,3 +161,70 @@ class SpectralMatchingLoss(nn.Module):
             
         return loss
 
+class EdgeFeatureLoss(nn.Module):
+    """
+    Supervises Transformer attention maps to ensure geometric consensus.
+    Forces inlier nodes to only 'listen' to other inlier nodes.
+    """
+    def __init__(self):
+        super(EdgeFeatureLoss, self).__init__()
+
+    def forward(self, all_attn_weights, gt_labels):
+        """
+        all_attn_weights: List of [B, nhead, N, N] tensors (one per layer)
+        gt_labels: [B, N]
+        """
+        bs, num_corr = gt_labels.shape
+        # Create Ground Truth adjacency matrix: 1 if both nodes are inliers
+        gt_graph = ((gt_labels[:, None, :] + gt_labels[:, :, None]) == 2).float()
+        
+        # Zero diagonal
+        diag_mask = torch.eye(num_corr, device=gt_labels.device).unsqueeze(0)
+        gt_graph = gt_graph * (1 - diag_mask)
+
+        total_loss = 0.0
+        num_layers = len(all_attn_weights)
+
+        for attn in all_attn_weights:
+            # attn: [B, nhead, N, N]
+            # Average over heads
+            attn_avg = attn.mean(dim=1) # [B, N, N]
+            
+            # Binary Cross Entropy between attention weights and ground truth graph
+            # We want attn_avg[i,j] to be 1 if gt_graph[i,j] is 1, else 0
+            # Use MSE for stability since attention is often sparse
+            layer_loss = F.mse_loss(attn_avg, gt_graph)
+            total_loss += layer_loss
+
+        return total_loss / num_layers
+
+class TopKClassificationLoss(nn.Module):
+    """
+    Provides extra supervision for the most confident points (potential seeds).
+    This ensures that the points used for sampling are of high quality.
+    """
+    def __init__(self, top_k=100):
+        super(TopKClassificationLoss, self).__init__()
+        self.top_k = top_k
+
+    def forward(self, logits, gt_labels):
+        """
+        logits: [B, N]
+        gt_labels: [B, N]
+        """
+        bs, num_corr = logits.shape
+        k = min(self.top_k, num_corr)
+        
+        # Find indices of top-k most confident points
+        confidence = torch.sigmoid(logits)
+        _, topk_indices = torch.topk(confidence, k=k, dim=1)
+        
+        # Gather logits and gt for these top-k points
+        topk_logits = torch.gather(logits, 1, topk_indices)
+        topk_gt = torch.gather(gt_labels, 1, topk_indices)
+        
+        # Apply standard BCE on these top-k points
+        loss = F.binary_cross_entropy_with_logits(topk_logits, topk_gt.float())
+        
+        return loss
+

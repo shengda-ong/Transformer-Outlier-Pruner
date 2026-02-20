@@ -108,12 +108,16 @@ if __name__ == '__main__':
         "ClassificationLoss": ClassificationLoss(balanced=config.balanced),
         "SpectralMatchingLoss": SpectralMatchingLoss(balanced=config.balanced),
         "TransformationLoss": TransformationLoss(re_thresh=config.re_thre, te_thresh=config.te_thre),
+        "EdgeFeatureLoss": EdgeFeatureLoss(),
+        "TopKClassificationLoss": TopKClassificationLoss(top_k=100),
     }
 
     config.metric_weight = {
         "ClassificationLoss": config.weight_classification,
         "SpectralMatchingLoss": config.weight_spectralmatching,
         "TransformationLoss": config.weight_transformation,
+        "EdgeFeatureLoss": config.weight_edgefeature, # Target weight for Phase 2
+        "TopKClassificationLoss": config.weight_topk, # Target weight for Phase 2
     }
 
     params = list(config.model.parameters())
