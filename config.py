@@ -17,7 +17,7 @@ def str2bool(v):
 
 
 dataset = '3DMatch'
-experiment_id = f"TransformerPruner_{dataset}"
+experiment_id = f"TransformerGeoPrunerCA_{dataset}"
 # snapshot configurations
 snapshot_arg = add_argument_group('Snapshot')
 snapshot_arg.add_argument('--exp_id', type=str, default=f'{experiment_id}')

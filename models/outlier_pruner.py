@@ -319,50 +319,90 @@ class MethodName(nn.Module):
 
         return res
 
+    def cal_leading_eigenvector(self, M, num_iterations=10):
+        """
+        Power iteration to find the leading eigenvector (weights) of compatibility matrix M.
+        M: [num_seeds, k, k]
+        """
+        leading_eig = torch.ones_like(M[:, :, 0:1])
+        for _ in range(num_iterations):
+            leading_eig = torch.bmm(M, leading_eig)
+            leading_eig = leading_eig / (torch.norm(leading_eig, dim=1, keepdim=True) + 1e-6)
+        return leading_eig.squeeze(-1)
+
+    def spatial_nms(self, src_pts, confidence, radius):
+        """
+        Perform Spatial NMS on source keypoints to diversify seeds.
+        src_pts: [N, 3], confidence: [N]
+        """
+        indices = torch.argsort(confidence, descending=True)
+        keep = []
+        while len(indices) > 0:
+            idx = indices[0]
+            keep.append(idx.item())
+            if len(indices) == 1: break
+            
+            dist = torch.norm(src_pts[indices[1:]] - src_pts[idx], dim=-1)
+            mask = dist > radius
+            indices = indices[1:][mask]
+        return torch.tensor(keep, device=src_pts.device)
+
     def predict_hypotheses(self, input_data, num_seeds=100, k=20):
         '''
-        [Inference Only]
-        Implements the Seed -> Subset -> SVD pipeline using Transformer features.
-        Replaces the Hypergraph lookup with k-NN
+        [Inference Only] Robust Hypothesis Generation
+        Mimics HyperGCT: Spatial NMS -> Local Compatibility -> Power Iteration -> SVD
         '''
-
         res = self.forward(input_data)
         features = res['features'] # (B, N, D)
         confidence = res['confidence'] # (B, N)
         src_pts = input_data['src_keypts']
         tgt_pts = input_data['tgt_keypts']
-
         B, N, _ = src_pts.shape
 
-        neighbor_indices = knn(features, k=k, ignore_self=True, normalized=True) # (B, N, k)
-
-        actual_num_seeds = min(num_seeds, N)
-        _, seed_indices = torch.topk(confidence, k=actual_num_seeds, dim=1) # (B, num_seeds)
-
         batch_hypotheses = []
-
         for b in range(B):
-            #  Extract data for this batch
-            b_seed_indices = seed_indices[b]
-            b_neighbor_indices = neighbor_indices[b]
-            b_src_pts = src_pts[b]
-            b_tgt_pts = tgt_pts[b]
+            # 1. Spatial NMS to get diverse seeds
+            b_src = src_pts[b]
+            b_tgt = tgt_pts[b]
+            b_conf = confidence[b]
+            b_feat = features[b]
+            
+            # Use inlier_threshold as NMS radius (diversify seeds)
+            seed_indices = self.spatial_nms(b_src, b_conf, self.inlier_threshold)
+            seed_indices = seed_indices[:num_seeds]
+            
+            # 2. Find k-NN in feature space for each seed
+            # neighbor_indices: (num_seeds, k)
+            dist_feat = torch.cdist(b_feat[seed_indices], b_feat)
+            neighbor_indices = torch.topk(dist_feat, k=k, largest=False)[1]
 
-            # For each seed, look up its k neighbors
-            subset_indices = b_neighbor_indices[b_seed_indices] # (num_seeds, k)
+            # 3. Build local compatibility matrices for subsets
+            # Gather subsets: (num_seeds, k, 3)
+            src_sub = b_src[neighbor_indices]
+            tgt_sub = b_tgt[neighbor_indices]
+            feat_sub = b_feat[neighbor_indices]
 
-            # Gather the 3D coordinates for these subsets
-            src_subsets = b_src_pts[subset_indices]
-            tgt_subsets = b_tgt_pts[subset_indices]
+            # Spatial consistency (length preservation): (num_seeds, k, k)
+            dist_s = torch.cdist(src_sub, src_sub)
+            dist_t = torch.cdist(tgt_sub, tgt_sub)
+            M_spatial = torch.clamp(1 - (dist_s - dist_t)**2 / self.inlier_threshold**2, min=0)
 
-            # SVD (Hypothesis Generation)
-            hypotheses = rigid_transform_3d(src_subsets, tgt_subsets, weights=None)
+            # Feature consistency: (num_seeds, k, k)
+            M_feat = torch.bmm(feat_sub, feat_sub.transpose(1, 2))
+            M_feat = torch.clamp(M_feat, min=0)
+
+            # Total compatibility: (num_seeds, k, k)
+            M = M_spatial * M_feat
+            M[:, torch.arange(k), torch.arange(k)] = 0 # zero diagonal
+
+            # 4. Power Iteration to get weights
+            weights = self.cal_leading_eigenvector(M) # (num_seeds, k)
+
+            # 5. Weighted SVD for each seed's subset
+            hypotheses = rigid_transform_3d(src_sub, tgt_sub, weights=weights)
             batch_hypotheses.append(hypotheses)
         
-        if B == 1:
-            return batch_hypotheses[0].unsqueeze(0)
-        else:
-            return torch.stack(batch_hypotheses)
+        return torch.stack(batch_hypotheses)
         
 
 
