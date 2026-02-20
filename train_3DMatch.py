@@ -1,7 +1,12 @@
 import os
+import sys
 import time
 import shutil
 import json
+
+# Ensure the current directory is in the path for local imports
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from config import get_config
 from easydict import EasyDict as edict
 from libs.loss import *
