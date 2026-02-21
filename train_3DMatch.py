@@ -28,6 +28,7 @@ if __name__ == '__main__':
         start_epoch = 0 # Update this if resuming
         best_reg_recall = 0
         best_F1 = 0
+        consensus_phase = False # Update this if resuming in phase 2
         experiment_id = config.exp_id # Use ID from config
         config.snapshot_dir = f'snapshot/{experiment_id}'
         config.tboard_dir = f'tensorboard/{experiment_id}'
@@ -36,6 +37,7 @@ if __name__ == '__main__':
         start_epoch = 0
         best_reg_recall = 0
         best_F1 = 0
+        consensus_phase = False
 
     os.makedirs(config.snapshot_dir, exist_ok=True)
     os.makedirs(config.tboard_dir, exist_ok=True)
@@ -135,7 +137,7 @@ if __name__ == '__main__':
     print(f"Total Parameters: {k}")
 
     trainer = Trainer(config)
-    trainer.train(resume, start_epoch, best_reg_recall, best_F1)
+    trainer.train(resume, start_epoch, best_reg_recall, best_F1, consensus_phase)
 
     # Clear GPU cache
     torch.cuda.empty_cache()

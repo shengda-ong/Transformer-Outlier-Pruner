@@ -46,17 +46,26 @@ class Trainer(object):
         if args.pretrain != '':
             self._load_pretrain(args.pretrain)
 
-    def train(self, resume, start_epoch, best_reg_recall, best_F1):
+    def train(self, resume, start_epoch, best_reg_recall, best_F1, consensus_phase=False):
         # resume to train from given epoch
         if resume:
             print('Resuming from epoch {}'.format(start_epoch))
             model_path = str(self.save_dir + '/model_{}.pkl'.format(start_epoch))
             print('Loading model parameters from {}'.format(model_path))
             self.model.load_state_dict(torch.load(model_path))
+            
+            # --- PHASE RESTORATION ---
+            self.consensus_phase = consensus_phase
+            # Auto-inference if epoch is large
+            if start_epoch >= self.max_warmup:
+                self.consensus_phase = True
+            
+            print(f">>> Resuming in {'CONSENSUS' if self.consensus_phase else 'WARMUP'} PHASE")
         else:
             start_epoch = 0
             best_reg_recall = 0
             best_F1 = 0
+            self.consensus_phase = False
             print('Warning: Retrain the model may not produce the same results!')
 
         self.model.train()
@@ -310,15 +319,17 @@ class Trainer(object):
 
     def _snapshot(self, epoch):
         torch.save(self.model.state_dict(), os.path.join(self.save_dir, f"model_{epoch}.pkl"))
-    
-    def _load_pretrain(self, pretrain):
-        self.model.load_state_dict(torch.load(pretrain, map_location='cpu'))
-
-    def _snapshot(self, epoch):
-        torch.save(self.model.state_dict(), os.path.join(self.save_dir, f"model_{epoch}.pkl"))
-        self.t.write(f"Save model to {self.save_dir}/model_{epoch}.pkl")
+        msg = f"Save model to {self.save_dir}/model_{epoch}.pkl"
+        if self.t is not None:
+            self.t.write(msg)
+        else:
+            print(msg)
     
     def _load_pretrain(self, pretrain):
         state_dict = torch.load(pretrain, map_location='cpu')
         self.model.load_state_dict(state_dict)
-        self.t.write(f"Load model from {pretrain}.pkl")
+        msg = f"Load model from {pretrain}.pkl"
+        if self.t is not None:
+            self.t.write(msg)
+        else:
+            print(msg)
