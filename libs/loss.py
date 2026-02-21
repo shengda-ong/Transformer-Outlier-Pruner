@@ -84,6 +84,7 @@ class ClassificationLoss(nn.Module):
             - pred: [bs, num_corr] predicted logits
             - gt:   [bs, num_corr] ground truth labels (0 or 1)
         """
+        gt = gt.float()
         bs, num_corr = pred.shape
         num_pos = torch.relu(torch.sum(gt) - 1) + 1
         num_neg = torch.relu(torch.sum(1 - gt) - 1) + 1
@@ -145,7 +146,7 @@ class SpectralMatchingLoss(nn.Module):
         """
         # Create Ground Truth Compatibility Matrix
         # Entry (i, j) is 1 iff both i and j are inliers
-        gt_M = ((gt_labels[:, None, :] + gt_labels[:, :, None]) == 2)
+        gt_M = ((gt_labels[:, None, :] + gt_labels[:, :, None]) == 2).float()
         
         # Ignore self-loops (diagonal)
         for i in range(gt_M.shape[0]):
