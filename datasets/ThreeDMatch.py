@@ -28,6 +28,9 @@ class ThreeDMatchTrainVal(data.Dataset):
         self.descriptor = descriptor
         assert descriptor in ['fpfh', 'fcgf']
         self.inlier_threshold = inlier_threshold
+        # Ensure num_node is int if not 'all'
+        if isinstance(num_node, str) and num_node != 'all':
+            num_node = int(num_node)
         self.num_node = num_node
         self.downsample = downsample
         self.augment_axis = augment_axis
@@ -192,6 +195,9 @@ class ThreeDMatchTest(data.Dataset):
         self.descriptor = descriptor
         assert descriptor in ['fcgf', 'fpfh']
         self.inlier_threshold = inlier_threshold
+        # Ensure num_node is int if not 'all'
+        if isinstance(num_node, str) and num_node != 'all':
+            num_node = int(num_node)
         self.num_node = num_node
         self.downsample = downsample
         self.augment_axis = augment_axis
@@ -397,6 +403,9 @@ class ThreeDLOMatchTest(data.Dataset):
         self.descriptor = descriptor
         assert descriptor in ['fcgf', 'fpfh', 'predator']
         self.inlier_threshold = inlier_threshold
+        # Ensure num_node is int if not 'all'
+        if isinstance(num_node, str) and num_node != 'all':
+            num_node = int(num_node)
         self.num_node = num_node
         self.downsample = downsample
         self.augment_axis = augment_axis
