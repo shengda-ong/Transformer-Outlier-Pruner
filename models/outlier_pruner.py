@@ -283,12 +283,17 @@ class MethodName(nn.Module):
         confidence = torch.sigmoid(logits)
 
         pred_trans = rigid_transform_3d(src_pts, tgt_pts, weights=confidence)
+        
+        # Select top-k seeds based on confidence for logging/testing
+        _, topk_seeds = torch.topk(confidence, k=min(100, confidence.shape[1]), dim=1)
+
         res = {
             'final_trans': pred_trans,
             'logits': logits,
             'confidence': confidence,
             'features': features,
-            'attn_weights': attn_weights
+            'attn_weights': attn_weights,
+            'seeds': topk_seeds
         }
 
         return res
