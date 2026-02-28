@@ -112,7 +112,7 @@ def get_dataloader(dataset, batch_size, shuffle=True, num_workers=4, fix_seed=Tr
         shuffle=shuffle, 
         collate_fn=collate_fn,
         num_workers=num_workers,
-        multiprocessing_context=torch.multiprocessing.get_context("spawn")
+        multiprocessing_context=torch.multiprocessing.get_context("spawn") if num_workers > 0 else None
     )
 
 def get_dataloader_lc(dataset, batch_size, shuffle=True, num_workers=4, fix_seed=True):
@@ -122,7 +122,7 @@ def get_dataloader_lc(dataset, batch_size, shuffle=True, num_workers=4, fix_seed
         shuffle=shuffle,
         collate_fn=collate_fn1,
         num_workers=num_workers,
-        multiprocessing_context=torch.multiprocessing.get_context("spawn")
+        multiprocessing_context=torch.multiprocessing.get_context("spawn") if num_workers > 0 else None
     )
     
 def get_dataloader_train(dataset, batch_size, sampler=None, shuffle=True, num_workers=4, fix_seed=True):
@@ -136,5 +136,5 @@ def get_dataloader_train(dataset, batch_size, sampler=None, shuffle=True, num_wo
         sampler=sampler,
         collate_fn=collate_fn2,
         num_workers=num_workers,
-        multiprocessing_context=torch.multiprocessing.get_context("spawn")
+        multiprocessing_context=torch.multiprocessing.get_context("spawn") if num_workers > 0 else None
     )
