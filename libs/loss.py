@@ -187,9 +187,12 @@ class EdgeFeatureLoss(nn.Module):
         num_layers = len(all_attn_weights)
 
         for attn in all_attn_weights:
-            # attn: [B, nhead, N, N]
-            # Average over heads
-            attn_avg = attn.mean(dim=1) # [B, N, N]
+            # attn: [B, nhead, N, N] or [B, N, N]
+            if attn.dim() == 4:
+                # Average over heads if not already averaged
+                attn_avg = attn.mean(dim=1) 
+            else:
+                attn_avg = attn
             
             # Binary Cross Entropy between attention weights and ground truth graph
             # We want attn_avg[i,j] to be 1 if gt_graph[i,j] is 1, else 0

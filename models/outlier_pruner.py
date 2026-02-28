@@ -85,7 +85,8 @@ class SOGMixingLayer(nn.TransformerEncoderLayer):
                                    attn_mask=attn_mask,
                                    key_padding_mask=key_padding_mask,
                                    need_weights=True,
-                                   is_causal=is_causal)
+                                   is_causal=is_causal,
+                                   average_attn_weights=False)
         return x, weights
     
  
