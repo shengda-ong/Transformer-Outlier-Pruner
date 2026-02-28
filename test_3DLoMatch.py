@@ -68,8 +68,9 @@ def eval_3DMatch_scene(model, scene_ind, dloader, config, args):
             # Use logits directly
             pred_labels = (logits > 0).int()
 
-            # Generate Hypotheses explicitly
-            sampled_trans = model.predict_hypotheses(data, num_seeds=100, k=20).squeeze(0)
+            # Generate Hypotheses explicitly using already computed features/confidence
+            # Note: Modified to accept pre-computed results to save memory
+            sampled_trans = model.predict_hypotheses(data, num_seeds=100, k=20, res=res).squeeze(0)
 
             # Evaluate Hypotheses quality
             if sampled_trans.dim() == 3 and sampled_trans.shape[0] > 0:
@@ -134,7 +135,7 @@ def eval_3DMatch(model, config, args):
                             augment_rotation=0.00,
                             augment_translation=0.0,
                             )
-    dloader = get_dataloader(dset, batch_size=1, num_workers=8, shuffle=False)
+    dloader = get_dataloader(dset, batch_size=1, num_workers=0, shuffle=False)
     os.makedirs('logs/3dlomatch', exist_ok=True)
     if os.path.isfile('logs/3dlomatch/'+args.descriptor+'.txt'):
         os.remove('logs/3dlomatch/'+args.descriptor+'.txt')
@@ -158,7 +159,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--chosen_snapshot', default='TransformerPruner_3DMatch', type=str, help='snapshot dir')
     parser.add_argument('--descriptor', default='fpfh', type=str)
-    parser.add_argument('--num_points', default='all', type=str)
+    parser.add_argument('--num_points', default='5000', type=str)
     parser.add_argument('--use_icp', default=False, type=str2bool)
     args = parser.parse_args()
     

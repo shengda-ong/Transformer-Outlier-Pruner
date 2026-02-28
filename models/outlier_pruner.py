@@ -326,12 +326,14 @@ class MethodName(nn.Module):
             indices = indices[1:][mask]
         return torch.tensor(keep, device=src_pts.device)
 
-    def predict_hypotheses(self, input_data, num_seeds=100, k=20):
+    def predict_hypotheses(self, input_data, num_seeds=100, k=20, res=None):
         '''
         [Inference Only] Robust Hypothesis Generation
         Mimics HyperGCT: Spatial NMS -> Local Compatibility -> Power Iteration -> SVD
         '''
-        res = self.forward(input_data)
+        if res is None:
+            res = self.forward(input_data)
+        
         features = res['features'] # (B, N, D)
         confidence = res['confidence'] # (B, N)
         src_pts = input_data['src_keypts']

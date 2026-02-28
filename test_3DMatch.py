@@ -72,7 +72,7 @@ def eval_3DMatch_scene(model, scene, scene_ind, dloader, config, args):
             confidence = res['confidence']
             pred_labels = (logits > 0).int()
 
-            sampled_trans = model.predict_hypotheses(data, num_seeds=100, k=20).squeeze(0)
+            sampled_trans = model.predict_hypotheses(data, num_seeds=100, k=20, res=res).squeeze(0)
 
             model_time = model_timer.toc()
 
@@ -129,6 +129,14 @@ def eval_3DMatch_scene(model, scene, scene_ind, dloader, config, args):
             class_stats = class_loss(logits, gt_labels) 
             recall_val, Re, Te, rmse = evaluate_metric(pred_trans, gt_trans, src_keypts, tgt_keypts, confidence)
 
+            # Update summary metrics
+            seed_precision += gt_labels[0, res['seeds'][0]].sum().item() / res['seeds'].size(1) * 100.0
+            seed_num += gt_labels[0, res['seeds'][0]].sum().item()
+            if recall_val > 100: # TransformationLoss returns recall in percentage
+                recall_val = 100
+            if recall_val > 0:
+                correct_num += 1
+
             # Stats recording
             stats[i, 0] = float(recall_val / 100.0)
             stats[i, 1] = float(Re)
@@ -183,7 +191,7 @@ def eval_3DMatch(model, config, args):
                                augment_translation=0.0,
                                select_scene=scene,
                                )
-        dloader = get_dataloader(dset, batch_size=1, num_workers=8, shuffle=False)
+        dloader = get_dataloader(dset, batch_size=1, num_workers=0, shuffle=False)
         scene_poses, scene_stats, seed_num, seed_precision, correct_num, correct_ratio = eval_3DMatch_scene(model, scene, scene_ind, dloader, config, args)
         
         avg_seed_num += seed_num
@@ -224,7 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('--chosen_snapshot', default='TransformerPruner_3DMatch', type=str, help='snapshot dir')
     parser.add_argument('--solver', default='SVD', type=str, choices=['SVD', 'RANSAC'])
     parser.add_argument('--descriptor', default='fcgf', type=str, choices=['fcgf', 'fpfh'])
-    parser.add_argument('--num_points', default='all', type=str)
+    parser.add_argument('--num_points', default='5000', type=str)
     parser.add_argument('--use_icp', default=False, type=str2bool)
     args = parser.parse_args()
     
